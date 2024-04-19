@@ -1,6 +1,6 @@
-use std::{cell::RefCell, io, rc::Rc, sync::Arc, thread, time::Duration};
+use std::{cell::RefCell, io, rc::Rc, time::Duration};
 
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
+use crossterm::event::{self, Event, KeyCode, KeyEvent};
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -12,7 +12,7 @@ use ratatui::{
 
 use ratatui::{
     style::Color,
-    widgets::{canvas::*, *},
+    widgets::canvas::*,
 };
 
 use crate::{creatures::{LivingCell, VectorMap}, tui};
@@ -30,7 +30,7 @@ impl Default for App {
         let cells = Rc::new(RefCell::from(Vec::new()));
         
         for _ in 0..100 {
-            cells.borrow_mut().push(LivingCell::new( cells.clone()))
+            cells.borrow_mut().push(LivingCell::new(cells.clone()))
         }
 
         Self { exit: Default::default(), cells }
@@ -51,6 +51,7 @@ impl App {
         Ok(())
     }
 
+    /// Iterate through and tick each Cell
     fn tick_cells(&mut self) {
         let mut b = self.cells.borrow_mut();
 
@@ -61,10 +62,12 @@ impl App {
         }
     }
 
+    /// Renders the frame
     fn render_frame(&self, frame: &mut Frame) {
         frame.render_widget(self, frame.size());
     }
 
+    /// Handles keyboard events
     pub fn handle_events(&mut self) -> io::Result<()> {
         let tick_rate = Duration::from_millis(16);
         if event::poll(tick_rate)? {
@@ -86,6 +89,7 @@ impl App {
         }
     }
 
+    /// Exits the program
     pub fn exit(&mut self) {
         for c in self.cells.borrow_mut().iter() {
             c.kill();

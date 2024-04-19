@@ -1,16 +1,8 @@
 use std::{
     cell::RefCell,
     rc::Rc,
-    sync::{
-        mpsc::{self, Receiver, Sender},
-        Arc,
-    },
-    thread::{self, JoinHandle},
-    time::{Duration, SystemTime},
-    vec,
 };
 
-use ratatui::layout::Rect;
 use seeded_random::Random;
 
 pub type Coords = (i32, i32);
@@ -50,6 +42,9 @@ impl VectorMap {
     }
 
     fn get_xy(&self, x: i32, y: i32) -> Option<&VectorMapStates> {
+        if (x < 0 || x > self.width as i32) || (y < 0 || y > self.height as i32) {
+            return None
+        }
         let i = xy_to_usize(x, y, self.width);
         self.v.get(i)
     }
@@ -87,12 +82,16 @@ enum Direction {
     Backward,
     Left,
     Right,
+    LeftForward,
+    RightForward,
+    LeftBackward,
+    RightBackward
 }
 
 impl Actions {
     pub fn random() -> Self {
         let random = Random::new();
-        let r = random.range(0, 4);
+        let r = random.range(0, 8);
         match r {
             0 => Self::Go(Direction::Forward),
             1 => Self::Go(Direction::Backward),
@@ -134,6 +133,7 @@ impl LivingCell {
         match &self.next_state {
             Actions::DoNothing => {
                 //Look around, gather information
+
                 self.next_state = Actions::random()
             }
             Actions::Look(d) => {
@@ -170,6 +170,38 @@ impl LivingCell {
                             }
                         }
                     }
+                    Direction::LeftForward => {
+                        if let Some(e) = context.get_xy(self.position.0 + 1, self.position.1 - 1) {
+                            match e {
+                                VectorMapStates::Void => self.next_state = Actions::Go(d.clone()),
+                                VectorMapStates::Creature(_) => {}
+                            }
+                        }
+                    },
+                    Direction::RightForward => {
+                        if let Some(e) = context.get_xy(self.position.0 + 1, self.position.1 + 1) {
+                            match e {
+                                VectorMapStates::Void => self.next_state = Actions::Go(d.clone()),
+                                VectorMapStates::Creature(_) => {}
+                            }
+                        }
+                    },
+                    Direction::LeftBackward => {
+                        if let Some(e) = context.get_xy(self.position.0 - 1, self.position.1 - 1) {
+                            match e {
+                                VectorMapStates::Void => self.next_state = Actions::Go(d.clone()),
+                                VectorMapStates::Creature(_) => {}
+                            }
+                        }
+                    },
+                    Direction::RightBackward => {
+                        if let Some(e) = context.get_xy(self.position.0 + 1, self.position.1 + 1) {
+                            match e {
+                                VectorMapStates::Void => self.next_state = Actions::Go(d.clone()),
+                                VectorMapStates::Creature(_) => {}
+                            }
+                        }
+                    },
                 }
             }
             Actions::Go(d) => match d {
@@ -193,6 +225,23 @@ impl LivingCell {
                         self.position.1 += 1
                     }
                 }
+                Direction::LeftForward => {
+                    self.position.0 += 1;
+                    self.position.1 -= 1;
+
+                },
+                Direction::RightForward => {
+                    self.position.0 += 1;
+                    self.position.1 += 1;
+                },
+                Direction::LeftBackward => {
+                    self.position.0 -= 1;
+                    self.position.1 -= 1;
+                },
+                Direction::RightBackward => {
+                    self.position.0 += 1;
+                    self.position.1 += 1;
+                },
             },
         }
     }
