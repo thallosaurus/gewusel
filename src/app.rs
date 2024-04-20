@@ -15,14 +15,19 @@ use ratatui::{
     widgets::canvas::*,
 };
 
-use crate::{creatures::{LivingCell, VectorMap}, tui};
+use crate::{creatures::LivingCell, map::VectorMap, tui};
+
+pub const WIDTH: f64 = 180.0;
+pub const HEIGHT: f64 = 90.0;
+
+pub type ParentRef = Rc<RefCell<Vec<LivingCell>>>;
 
 
 #[derive(Debug)]
 pub struct App {
     //pub counter: u8,
     pub exit: bool,
-    cells: Rc<RefCell<Vec<LivingCell>>>
+    cells: ParentRef
 }
 
 impl Default for App {
@@ -55,6 +60,7 @@ impl App {
     fn tick_cells(&mut self) {
         let mut b = self.cells.borrow_mut();
 
+        // Get contextualized Map for Cells
         let vm = VectorMap::new(b.to_owned());
 
         for c in b.iter_mut() {
@@ -91,7 +97,7 @@ impl App {
 
     /// Exits the program
     pub fn exit(&mut self) {
-        for c in self.cells.borrow_mut().iter() {
+        for c in self.cells.borrow_mut().iter_mut() {
             c.kill();
         }
         self.exit = true;
@@ -99,17 +105,18 @@ impl App {
 }
 
 impl Widget for &App {
+
+    /// Handles drawing of the dots
     fn render(self, area: Rect, buf: &mut Buffer) {
         let canvas = Canvas::default()
             .block(Block::default().title("Canvas").borders(Borders::ALL))
-            .x_bounds([-180.0, 180.0])
-            .y_bounds([-90.0, 90.0])
+            .x_bounds([-1.0 * WIDTH, WIDTH])
+            .y_bounds([-1.0 * HEIGHT, HEIGHT])
             .paint(|ctx| {
                 let coords: Vec<(f64, f64)> = self.cells.borrow().iter().map(|c| {
-                    let (x, y) = c.get_coords();
+                    let co = c.get_coords();
 
-                    let c = (f64::from(x), f64::from(y));
-                    c
+                    (co.0, co.1)
                 }).collect();
 
                 let shape = Points {

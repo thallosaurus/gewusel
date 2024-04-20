@@ -4,6 +4,7 @@ use app::App;
 mod app;
 mod tui;
 mod creatures;
+mod map;
 
 fn main() -> io::Result<()> {
     let mut terminal = tui::init()?;

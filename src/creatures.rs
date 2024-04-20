@@ -1,69 +1,22 @@
-use std::{
-    cell::RefCell,
-    rc::Rc,
-};
-
 use seeded_random::Random;
 
-pub type Coords = (i32, i32);
+use crate::{
+    app::{ParentRef, HEIGHT, WIDTH},
+    map::{MapCoords, VectorMap, VectorMapStates},
+};
 
-/// The Vector Map is responsible for the virtual translation of outside world and how the creature sees it
-pub struct VectorMap {
-    v: Vec<VectorMapStates>,
-    width: u32,
-    height: u32,
-}
-
-enum VectorMapStates {
-    Void,
-    Creature(usize),
-}
-
-impl VectorMap {
-    pub fn new(rc: Vec<LivingCell>) -> Self {
-        let mut v: Vec<VectorMapStates> = Vec::new();
-
-        for _ in 0..(360 * 180) {
-            v.push(VectorMapStates::Void);
-        }
-
-        for (i, c) in rc.iter().enumerate() {
-            let ii = xy_to_usize(c.position.0, c.position.1, 360);
-            if let Some(v) = v.get_mut(ii) {
-                *v = VectorMapStates::Creature(i);
-            }
-        }
-
-        Self {
-            width: 360,
-            height: 180,
-            v,
-        }
-    }
-
-    fn get_xy(&self, x: i32, y: i32) -> Option<&VectorMapStates> {
-        if (x < 0 || x > self.width as i32) || (y < 0 || y > self.height as i32) {
-            return None
-        }
-        let i = xy_to_usize(x, y, self.width);
-        self.v.get(i)
-    }
-}
-
-fn xy_to_usize(x: i32, y: i32, w: u32) -> usize {
-    let (x, y) = (x + 180, y + 90);
-    ((y * w as i32) + x) as usize
-}
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AbsoluteCoords(pub f64, pub f64);
 
 #[derive(Debug, Clone)]
 pub struct LivingCell {
-    position: Coords,
+    position: AbsoluteCoords,
     state: CellState,
-    parent: Rc<RefCell<Vec<Self>>>,
+    parent: ParentRef,
     next_state: Actions, //thread_signal_sender: Sender<LivingCellSignals>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum CellState {
     Alive,
     Dead,
@@ -85,35 +38,78 @@ enum Direction {
     LeftForward,
     RightForward,
     LeftBackward,
-    RightBackward
+    RightBackward,
+    Idle,
+}
+
+impl From<u32> for Direction {
+    fn from(value: u32) -> Self {
+        match value {
+            0 => Self::Forward,
+            1 => Self::Backward,
+            2 => Self::Left,
+            3 => Self::Right,
+            4 => Self::LeftForward,
+            5 => Self::LeftBackward,
+            6 => Self::RightForward,
+            7 => Self::RightBackward,
+            _ => Self::Idle,
+        }
+    }
+}
+
+impl Direction {
+    fn random() -> Self {
+        let rnd = Random::new();
+        let c = rnd.range(0, 8);
+        Self::from(c)
+    }
+    fn get_vector(&self) -> AbsoluteCoords {
+        match self {
+            // (x,y)
+            Direction::Forward => AbsoluteCoords(0.0, 1.0),
+            Direction::Backward => AbsoluteCoords(0.0, -1.0),
+            Direction::Left => AbsoluteCoords(-1.0, 0.0),
+            Direction::Right => AbsoluteCoords(1.0, 0.0),
+            Direction::LeftForward => AbsoluteCoords(-1.0, 1.0),
+            Direction::RightForward => AbsoluteCoords(1.0, 1.0),
+            Direction::LeftBackward => AbsoluteCoords(-1.0, -1.0),
+            Direction::RightBackward => AbsoluteCoords(1.0, -1.0),
+            Direction::Idle => AbsoluteCoords(0.0, 0.0),
+        }
+    }
 }
 
 impl Actions {
     pub fn random() -> Self {
         let random = Random::new();
-        let r = random.range(0, 8);
+        let r = random.range(0, 4);
         match r {
             0 => Self::Go(Direction::Forward),
             1 => Self::Go(Direction::Backward),
             2 => Self::Go(Direction::Left),
             3 => Self::Go(Direction::Right),
+            4 => Self::Go(Direction::LeftForward),
+            5 => Self::Go(Direction::LeftBackward),
+            6 => Self::Go(Direction::RightForward),
+            7 => Self::Go(Direction::RightBackward),
             _ => Self::DoNothing,
         }
     }
 }
 
 impl LivingCell {
-    pub fn new(parent: Rc<RefCell<Vec<Self>>>) -> Self {
+    pub fn new(parent: ParentRef) -> Self {
         let random = Random::new();
         random.range(0, 100);
 
-        let random_x = random.range(0, 360) as i32;
-        let random_y = random.range(0, 180) as i32;
+        let random_x = random.range(0, 360) as f64;
+        let random_y = random.range(0, 180) as f64;
         //let random_y = source.read_f64() * 100.0 - 50.0;
 
         //let (tx, rx) = mpsc::channel();
         let cell = Self {
-            position: (random_x - 180, random_y - 90),
+            position: AbsoluteCoords(random_x - 180.0, random_y - 90.0),
             state: CellState::Alive,
             next_state: Actions::DoNothing,
             parent,
@@ -123,126 +119,64 @@ impl LivingCell {
 
         cell
     }
-    pub fn get_coords(&self) -> Coords {
+    pub fn get_coords(&self) -> AbsoluteCoords {
         self.position
     }
 
-    pub fn kill(&self) {}
+    pub fn kill(&mut self) {
+        self.state = CellState::Dead
+    }
 
-    pub fn tick(&mut self, context: &VectorMap) {
-        match &self.next_state {
-            Actions::DoNothing => {
-                //Look around, gather information
+    fn safe_to_go(&self, context: &VectorMap, coordinates: AbsoluteCoords) -> bool {
+        if let Some(e) = context.get_xy(coordinates.into()) {
+            match e {
+                VectorMapStates::Void => {
+                    true
+                },
 
-                self.next_state = Actions::random()
+                // We saw a creature there
+                VectorMapStates::Creature(i, pos) => {
+                    false
+                },
             }
-            Actions::Look(d) => {
-                match d {
-                    Direction::Forward => {
-                        if let Some(e) = context.get_xy(self.position.0 + 1, self.position.1) {
-                            match e {
-                                VectorMapStates::Void => self.next_state = Actions::Go(d.clone()),
-                                VectorMapStates::Creature(_) => {}
-                            }
-                        }
-                    }
-                    Direction::Backward => {
-                        if let Some(e) = context.get_xy(self.position.0 - 1, self.position.1) {
-                            match e {
-                                VectorMapStates::Void => self.next_state = Actions::Go(d.clone()),
-                                VectorMapStates::Creature(_) => {}
-                            }
-                        }
-                    }
-                    Direction::Left => {
-                        if let Some(e) = context.get_xy(self.position.0, self.position.1 - 1) {
-                            match e {
-                                VectorMapStates::Void => self.next_state = Actions::Go(d.clone()),
-                                VectorMapStates::Creature(_) => {}
-                            }
-                        }
-                    }
-                    Direction::Right => {
-                        if let Some(e) = context.get_xy(self.position.0, self.position.1 + 1) {
-                            match e {
-                                VectorMapStates::Void => self.next_state = Actions::Go(d.clone()),
-                                VectorMapStates::Creature(_) => {}
-                            }
-                        }
-                    }
-                    Direction::LeftForward => {
-                        if let Some(e) = context.get_xy(self.position.0 + 1, self.position.1 - 1) {
-                            match e {
-                                VectorMapStates::Void => self.next_state = Actions::Go(d.clone()),
-                                VectorMapStates::Creature(_) => {}
-                            }
-                        }
-                    },
-                    Direction::RightForward => {
-                        if let Some(e) = context.get_xy(self.position.0 + 1, self.position.1 + 1) {
-                            match e {
-                                VectorMapStates::Void => self.next_state = Actions::Go(d.clone()),
-                                VectorMapStates::Creature(_) => {}
-                            }
-                        }
-                    },
-                    Direction::LeftBackward => {
-                        if let Some(e) = context.get_xy(self.position.0 - 1, self.position.1 - 1) {
-                            match e {
-                                VectorMapStates::Void => self.next_state = Actions::Go(d.clone()),
-                                VectorMapStates::Creature(_) => {}
-                            }
-                        }
-                    },
-                    Direction::RightBackward => {
-                        if let Some(e) = context.get_xy(self.position.0 + 1, self.position.1 + 1) {
-                            match e {
-                                VectorMapStates::Void => self.next_state = Actions::Go(d.clone()),
-                                VectorMapStates::Creature(_) => {}
-                            }
-                        }
-                    },
-                }
-            }
-            Actions::Go(d) => match d {
-                Direction::Forward => {
-                    if self.position.0 < 180 {
-                        self.position.0 += 1
-                    }
-                }
-                Direction::Backward => {
-                    if self.position.0 > -180 {
-                        self.position.0 -= 1
-                    }
-                }
-                Direction::Left => {
-                    if self.position.1 > -90 {
-                        self.position.1 -= 1
-                    }
-                }
-                Direction::Right => {
-                    if self.position.1 < 90 {
-                        self.position.1 += 1
-                    }
-                }
-                Direction::LeftForward => {
-                    self.position.0 += 1;
-                    self.position.1 -= 1;
-
-                },
-                Direction::RightForward => {
-                    self.position.0 += 1;
-                    self.position.1 += 1;
-                },
-                Direction::LeftBackward => {
-                    self.position.0 -= 1;
-                    self.position.1 -= 1;
-                },
-                Direction::RightBackward => {
-                    self.position.0 += 1;
-                    self.position.1 += 1;
-                },
-            },
+        } else {
+            true
         }
     }
+
+    pub fn tick(&mut self, context: &VectorMap) {
+        if self.state != CellState::Dead {
+            match Actions::random() {
+                Actions::DoNothing => {
+                    //Look around, gather information
+
+                    self.next_state = Actions::random()
+                }
+                Actions::Look(d) => {
+                    let d_vec = d.get_vector();
+                    let new_pos = add_coords(&self.position, &d_vec);
+
+                    if let Some(e) = context.get_xy(new_pos.into()) {
+                        match e {
+                            VectorMapStates::Void => self.next_state = Actions::Go(d.clone()),
+
+                            // We saw a creature there
+                            VectorMapStates::Creature(i, pos) => {}
+                        }
+                    }
+                }
+                Actions::Go(d) => {
+                    let d_vec = d.get_vector();
+                    let new_pos = add_coords(&self.position, &d_vec);
+                    if self.safe_to_go(context, new_pos) {
+                        self.position = new_pos
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn add_coords(a: &AbsoluteCoords, b: &AbsoluteCoords) -> AbsoluteCoords {
+    AbsoluteCoords(a.0 + b.0, a.1 + b.1)
 }
