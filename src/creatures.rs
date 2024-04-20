@@ -140,7 +140,7 @@ impl LivingCell {
                 },
             }
         } else {
-            true
+            false
         }
     }
 
@@ -179,4 +179,19 @@ impl LivingCell {
 
 fn add_coords(a: &AbsoluteCoords, b: &AbsoluteCoords) -> AbsoluteCoords {
     AbsoluteCoords(a.0 + b.0, a.1 + b.1)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{borrow::BorrowMut, cell::RefCell, rc::Rc};
+
+    use super::*;
+
+    #[test]
+    fn testMaps() {
+        let cells = Rc::new(RefCell::from(Vec::new()));
+
+        let c = LivingCell::new(cells);
+        //cells.borrow_mut().push(c);
+    }
 }

@@ -110,8 +110,8 @@ impl Widget for &App {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let canvas = Canvas::default()
             .block(Block::default().title("Canvas").borders(Borders::ALL))
-            .x_bounds([-1.0 * WIDTH, WIDTH])
-            .y_bounds([-1.0 * HEIGHT, HEIGHT])
+            .x_bounds([-WIDTH, WIDTH])
+            .y_bounds([-HEIGHT, HEIGHT])
             .paint(|ctx| {
                 let coords: Vec<(f64, f64)> = self.cells.borrow().iter().map(|c| {
                     let co = c.get_coords();
