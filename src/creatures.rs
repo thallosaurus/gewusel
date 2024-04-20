@@ -13,7 +13,7 @@ pub struct LivingCell {
     position: AbsoluteCoords,
     state: CellState,
     parent: ParentRef,
-    next_state: Actions, //thread_signal_sender: Sender<LivingCellSignals>,
+    next_state: Actions,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -146,7 +146,7 @@ impl LivingCell {
 
     pub fn tick(&mut self, context: &VectorMap) {
         if self.state != CellState::Dead {
-            match Actions::random() {
+            match &self.next_state {
                 Actions::DoNothing => {
                     //Look around, gather information
 
@@ -161,7 +161,9 @@ impl LivingCell {
                             VectorMapStates::Void => self.next_state = Actions::Go(d.clone()),
 
                             // We saw a creature there
-                            VectorMapStates::Creature(i, pos) => {}
+                            VectorMapStates::Creature(i, pos) => {
+                                println!("Creature ID {} at {:?}", i, pos);
+                            }
                         }
                     }
                 }
